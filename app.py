@@ -2,8 +2,15 @@ from flask import Flask, request, send_file
 from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 import io
+import os
+
 
 app = Flask(__name__)
+
+
+data_folder = 'data'
+if not os.path.exists(data_folder):
+    os.makedirs(data_folder)
 
 @app.route('/modify_pdf', methods=['POST'])
 def modify_pdf():
@@ -54,6 +61,10 @@ def modify_pdf():
             output_stream = io.BytesIO()
             output_pdf.write(output_stream)
             output_stream.seek(0)
+            
+            file_path = os.path.join(data_folder, 'modified_file.pdf')
+            with open(file_path, "wb") as f:
+                f.write(output_stream.getvalue())
 
             return send_file(
                 output_stream,
