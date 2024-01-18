@@ -3,27 +3,35 @@ from PyPDF2 import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 import io
 import os
+import logging
+from reportlab.lib.pagesizes import letter
+from logging.handlers import RotatingFileHandler
 
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+handler = RotatingFileHandler("app.log", maxBytes=10000, backupCount=3)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(handler)
 
 app = Flask(__name__)
 
 
-data_folder = 'data'
+data_folder = "data"
 if not os.path.exists(data_folder):
     os.makedirs(data_folder)
 
-@app.route('/modify_pdf', methods=['POST'])
+
+@app.route("/modify_pdf", methods=["POST"])
 def modify_pdf():
     # Check if a file is included in the request
-    if 'file' not in request.files:
+    if "file" not in request.files:
         return "No file part in the request", 400
 
-    # Extract text from the request JSON, default to a standard text if not provided
-    text_to_write = request.form.get('text', 'Default text if not provided')
+    file = request.files["file"]
+    text_to_write = request.form.get("text", "Default watermark text")
 
-    file = request.files['file']
-
-    if file.filename == '':
+    if file.filename == "":
         return "No file selected for uploading", 400
 
     if file:
@@ -32,66 +40,73 @@ def modify_pdf():
             output_pdf = PdfWriter()
 
             for i, page in enumerate(input_pdf.pages):
-                # Create an overlay PDF with Reportlab
-                overlay_packet = io.BytesIO()
-                overlay = canvas.Canvas(overlay_packet)
-
-                # Set the size of the overlay to match the input page
+                packet = io.BytesIO()
+                # Create a new PDF with Reportlab
+                can = canvas.Canvas(packet)
                 page_width = float(page.mediabox.upper_right[0])
                 page_height = float(page.mediabox.upper_right[1])
-                overlay.setPageSize((page_width, page_height))
+                can.setPageSize((page_width, page_height))
+                
+                # Set watermark text properties
+                font_size = 20  # Adjust as needed
+                can.setFont("Helvetica-Bold", font_size)
+                can.setFillColorRGB(0, 0, 0, 0.3)  # Set color and transparency
 
-                # Draw the border and use the provided text
-                overlay.setStrokeColorRGB(0, 0, 0)  # Black color
-                overlay.setLineWidth(5)
-                overlay.rect(5, 5, page_width - 10, page_height - 10)
-                overlay.setFont("Helvetica", 12)
-                overlay.drawString(30, 30, text_to_write)  # Position the text at the bottom-left
-                overlay.save()
+                # Ensure the watermark is centered
+                text_width = can.stringWidth(text_to_write, "Helvetica-Bold", font_size)
+                text_x = (page_width - text_width) / 2
+                text_y = (page_height - font_size) / 2
+                can.saveState()
+                can.translate(text_x + text_width / 2, text_y + font_size / 2)
+                can.rotate(45)
+                can.drawCentredString(0, 0, text_to_write)
+                can.restoreState()
+                can.save()
 
-                # Move back to the start of the BytesIO object
-                overlay_packet.seek(0)
-                overlay_pdf = PdfReader(overlay_packet)
-
-                # Merge the overlay with the original page
-                page.merge_page(overlay_pdf.pages[0])
+                # Move to the beginning of the StringIO buffer
+                packet.seek(0)
+                new_pdf = PdfReader(packet)
+                watermark = new_pdf.pages[0]
+                
+                # Merge the watermark with the page
+                page.merge_page(watermark)
                 output_pdf.add_page(page)
 
-            # Save the merged PDF to a BytesIO object
+            # Save the result
             output_stream = io.BytesIO()
             output_pdf.write(output_stream)
             output_stream.seek(0)
-            
-            file_path = os.path.join(data_folder, 'modified_file.pdf')
-            with open(file_path, "wb") as f:
-                f.write(output_stream.getvalue())
 
+            # Send the result as a file
             return send_file(
                 output_stream,
                 as_attachment=True,
-                download_name='modified_file.pdf',
-                mimetype='application/pdf'
+                download_name="watermarked_file.pdf",
+                mimetype="application/pdf",
             )
-
         except Exception as e:
-            app.logger.error(f'Error processing PDF: {e}')
+            # Replace 'app.logger.error' with your actual logging if needed
+            print(f"Error processing PDF: {e}")
             return f"An error occurred: {str(e)}", 500
 
     return "Something went wrong", 500
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def home():
     return "home works"
 
+
 @app.errorhandler(500)
 def internal_server_error(error):
-    app.logger.error('Server Error: %s', error)
+    app.logger.error("Server Error: %s", error)
     return str(error), 500
+
 
 @app.errorhandler(Exception)
 def handle_exception(error):
-    app.logger.error('Unhandled Exception: %s', error)
+    app.logger.error("Unhandled Exception: %s", error)
     return str(error), 500
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     app.run(debug=True)
