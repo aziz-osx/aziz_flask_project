@@ -93,7 +93,7 @@ def modify_pdf():
 
 @app.route("/", methods=["GET"])
 def home():
-    return ""kipic pdf water mark service is active and ready for new siging pdf request. Bon appatit !!""
+    return "kipic pdf water mark service is active and ready for new siging pdf request. Bon appatit !!"
 
 
 @app.errorhandler(500)
